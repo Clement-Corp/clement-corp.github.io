@@ -1,4 +1,4 @@
-# Clément Corp Website
+# bun-react-tailwind-template
 
 To install dependencies:
 
