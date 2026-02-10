@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface Position {
   x: number;
@@ -12,13 +12,35 @@ interface Frame {
 }
 
 export function Choreography() {
-  const [dancers, setDancers] = useState<string[]>([]);
+  const [dancers, setDancers] = useState<string[]>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('choreography_dancers') : null;
+    return saved ? JSON.parse(saved) : [];
+  });
   const [newDancerName, setNewDancerName] = useState('');
-  const [frames, setFrames] = useState<Frame[]>([{ id: '1', name: 'Frame 1', positions: {} }]);
-  const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
+  const [frames, setFrames] = useState<Frame[]>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('choreography_frames') : null;
+    return saved ? JSON.parse(saved) : [{ id: '1', name: 'Frame 1', positions: {} }];
+  });
+  const [currentFrameIndex, setCurrentFrameIndex] = useState(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('choreography_currentFrameIndex') : null;
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  const [activeTouchDancer, setActiveTouchDancer] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
 
-  const currentFrame = frames[currentFrameIndex];
+  useEffect(() => {
+    localStorage.setItem('choreography_dancers', JSON.stringify(dancers));
+  }, [dancers]);
+
+  useEffect(() => {
+    localStorage.setItem('choreography_frames', JSON.stringify(frames));
+  }, [frames]);
+
+  useEffect(() => {
+    localStorage.setItem('choreography_currentFrameIndex', currentFrameIndex.toString());
+  }, [currentFrameIndex]);
+
+  const currentFrame = frames[currentFrameIndex] || frames[0];
 
   const addDancer = () => {
     if (newDancerName && !dancers.includes(newDancerName)) {
@@ -87,8 +109,36 @@ export function Choreography() {
     e.preventDefault();
   };
 
+  const handleTouchStart = (dancerName: string) => {
+    setActiveTouchDancer(dancerName);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!activeTouchDancer || !stageRef.current) return;
+    
+    const touch = e.touches[0];
+    const rect = stageRef.current.getBoundingClientRect();
+    
+    const x = ((touch.clientX - rect.left) / rect.width) * 100;
+    const y = ((touch.clientY - rect.top) / rect.height) * 100;
+    
+    // We allow dragging slightly outside to make it easier on mobile
+    const boundedX = Math.max(0, Math.min(100, x));
+    const boundedY = Math.max(0, Math.min(100, y));
+    
+    updateDancerPosition(activeTouchDancer, boundedX, boundedY);
+  };
+
+  const handleTouchEnd = () => {
+    setActiveTouchDancer(null);
+  };
+
   return (
-    <div className="flex flex-col p-4 h-screen bg-gray-100 text-gray-800">
+    <div 
+      className="flex flex-col p-4 md:h-screen min-h-screen bg-gray-100 text-gray-800"
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <header className="flex justify-between items-center mb-4">
         <h1 className="text-3xl font-bold">Choreography Planner</h1>
         <div className="flex gap-4">
@@ -101,9 +151,9 @@ export function Choreography() {
         </div>
       </header>
       
-      <div className="flex flex-1 gap-4 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 gap-4 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-72 bg-white p-4 rounded-xl shadow-md overflow-y-auto flex flex-col">
+        <div className="w-full md:w-72 bg-white p-4 rounded-xl shadow-md overflow-y-auto flex flex-col max-h-64 md:max-h-full">
           <div className="mb-6">
             <h2 className="font-bold text-lg mb-3 border-b pb-1">Dancers</h2>
             <div className="flex gap-2 mb-4">
@@ -129,7 +179,8 @@ export function Choreography() {
                   key={dancer} 
                   draggable 
                   onDragStart={(e) => handleDragStart(e, dancer)}
-                  className="bg-gray-50 border border-gray-200 p-2 rounded cursor-grab active:cursor-grabbing hover:bg-gray-100 transition text-sm flex justify-between items-center group"
+                  onTouchStart={() => handleTouchStart(dancer)}
+                  className="bg-gray-50 border border-gray-200 p-2 rounded cursor-grab active:cursor-grabbing hover:bg-gray-100 transition text-sm flex justify-between items-center group touch-none"
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{dancer}</span>
@@ -138,7 +189,8 @@ export function Choreography() {
                     )}
                   </div>
                   <button 
-                    onClick={() => removeDancer(dancer)}
+                    onClick={(e) => { e.stopPropagation(); removeDancer(dancer); }}
+                    onTouchStart={(e) => e.stopPropagation()}
                     className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
                   >
                     ×
@@ -169,7 +221,8 @@ export function Choreography() {
                   </button>
                   {frames.length > 1 && (
                     <button 
-                      onClick={() => removeFrame(frame.id)}
+                      onClick={(e) => { e.stopPropagation(); removeFrame(frame.id); }}
+                      onTouchStart={(e) => e.stopPropagation()}
                       className="text-gray-400 hover:text-red-500 px-1 opacity-0 group-hover:opacity-100 transition"
                     >
                       ×
@@ -182,7 +235,7 @@ export function Choreography() {
         </div>
 
         {/* Stage Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-[300px] md:min-h-0">
           <div className="mb-2 flex justify-between items-center bg-white p-2 px-4 rounded-t-lg shadow-sm border-b">
             <span className="font-bold text-blue-800 uppercase tracking-wider">{currentFrame.name}</span>
             <span className="text-xs text-gray-500 italic">Drag dancers from the list or move them on the stage</span>
@@ -209,7 +262,8 @@ export function Choreography() {
                   key={dancer}
                   draggable
                   onDragStart={(e) => handleDragStart(e, dancer)}
-                  className="absolute transform -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center cursor-grab active:cursor-grabbing shadow-lg border-2 border-white group"
+                  onTouchStart={() => handleTouchStart(dancer)}
+                  className="absolute transform -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center cursor-grab active:cursor-grabbing shadow-lg border-2 border-white group touch-none"
                   style={{ left: `${pos.x}%`, top: `${pos.y}%`, zIndex: 10 }}
                 >
                   <span className="text-xs font-black truncate px-1">{dancer.substring(0, 3).toUpperCase()}</span>
